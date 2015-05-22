@@ -122,7 +122,7 @@ configure do
 end
 
 get '/' do
-  redirect '/train'
+  redirect '/classify'
 end
 
 get '/classify' do
