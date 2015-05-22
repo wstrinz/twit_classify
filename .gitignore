@@ -1,0 +1,4 @@
+dev_data/*
+spec/cassettes/*
+.bundle/*
+tags
