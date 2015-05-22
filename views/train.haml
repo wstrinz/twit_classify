@@ -1,0 +1,34 @@
+%head
+  -# %script{src: 'repos.js', type: 'text/javascript'}
+  -# %link{:rel => :stylesheet, :type => :"text/css", :href => "repos.css"}
+%body
+  %h2 Classify!
+  - if flash[:notice]
+    %p #{flash[:notice]}
+
+  %h4 Tweets for #{@twitter_account}
+  %h5 #{@n_classifications} tweets for this account have been classified
+
+  %p
+    %form{method: 'POST'}
+      %input{name: 'id', hidden: true, value: @tweet['id']}
+      %input{name: 'text', hidden: true, value: @tweet['text']}
+      %hr
+      %p
+        #{@tweet['text']}
+      %hr
+      %br
+      %label
+        Classification
+        %input{type: 'text', name: 'classification', value: @current_classification}
+      %br
+      %br
+      %button{type: :submit} Submit
+  %p Current Categories:
+  %ul
+  - @categories.each do |cat, details|
+    %li
+      %strong #{cat}
+      (#{details[:_count]})
+
+  %p Logged in as #{@user}

@@ -1,18 +1,23 @@
 require 'rest-client'
+require 'pry'
 require 'sinatra'
 require 'json'
 require 'haml'
 require 'omniauth'
 require 'omniauth-github'
+require 'active_support'
+require 'active_support/core_ext'
+require 'stuff-classifier'
+require 'redis'
+require 'twitter'
 require 'rack/ssl-enforcer'
+require 'rack-flash'
 
-require_relative 'github_helper.rb'
+require_relative 'github_helper'
+require_relative 'tclassifier'
+require_relative 'twit_helper'
 
 helpers do
-  def sample_repos
-    JSON.parse(IO.read('dev_data/repos.json'))
-  end
-
   def sample_oauth
     if File.exist? "dev_data/oauth_token"
       IO.read('dev_data/oauth_token').strip
@@ -45,35 +50,114 @@ helpers do
     end
   end
 
+  def get_latest_unclassified_tweet(account)
+    TwitHelper.new(account).get_tweets.find do |t|
+      !$redis.hget(account, t['id'])
+    end
+  end
+
+  def categories_for(account)
+    TClassifier.new(account).category_list
+  end
+
+  def num_classifications_for(account)
+    TClassifier.new(account).number_of_classifications
+  end
+
   def logout!
     session.clear
   end
 end
 
 configure do
-  if production?
+  if development?
+    $redis = Redis.new
+    store = StuffClassifier::RedisStorage.new('classifications')
+    session_secret = '123456789101112'
+  else
     use Rack::SslEnforcer
+    uri = URI.parse(ENV["REDISCLOUD_URL"])
+    $redis = Redis.new(:host => uri.host, :port => uri.port, :password => uri.password)
+    store = StuffClassifier::RedisStorage.new('classifications', {host: uri.host, port: uri.port, password: uri.password})
+    session_secret = ENV['SESSION_SECRET']
   end
+
+  StuffClassifier::Base.storage = store
+
   use OmniAuth::Builder do
-    user_scopes = 'user,repo,read:repo_hook,write:repo_hook,admin:repo_hook,read:org'
+    user_scopes = 'user,read:org'
     provider :github, ENV['GITHUB_KEY'], ENV['GITHUB_SECRET'], scope: user_scopes
   end
   enable :sessions
-  set :session_secret, ENV['SESSION_SECRET']
+
+  set :session_secret, session_secret
+
+  use Rack::Flash
 end
 
 get '/' do
-  if authenticated?
-    @twitter_account = params[:account] || "@bendyworks"
-    @user = session[:auth_hash]["info"]["nickname"]
-    haml :classify
-  else
-    haml :login
-  end
+  redirect '/train'
 end
 
 get '/classify' do
-  redirect '/'
+  redirect '/classify/@bendyworks'
+end
+
+get '/classify/:account' do
+  "classify page for #{params[:account]}"
+end
+
+get '/train' do
+  redirect '/train/@bendyworks'
+end
+
+get '/train/:account' do
+  if authenticated?
+    @twitter_account = params[:account] || "@bendyworks"
+    @user = session[:auth_hash]["info"]["nickname"]
+
+    @tweet = get_latest_unclassified_tweet(@twitter_account)
+    unless @tweet
+      raise "No tweets for #{@twitter_account}. Should probably handle this better"
+    end
+
+    @current_classification = TClassifier.new(@twitter_account).classify(@tweet['text'])
+    @n_classifications = num_classifications_for(@twitter_account)
+    @categories = categories_for(@twitter_account) || {}
+
+    haml :train
+  else
+    redirect '/login'
+  end
+end
+
+post '/train/:account' do
+  unless authenticated?
+    redirect '/login'
+  end
+
+  param_map = {account: params[:account], text: params[:text],
+               classification: params[:classification], id: params[:id]}
+  acct, txt, klass, id = param_map.values
+
+  if param_map.values.all?(&:present?)
+    cls = TClassifier.new(acct)
+    cls.train(klass, txt)
+    $redis.hset(acct, id, true)
+    flash[:notice] = "Success"
+    redirect "/train/#{acct}"
+  else
+    flash[:notice] = "missing param(s): #{param_map.reject{|k, v| v.present?}.map(&:first)}"
+    redirect "/train/#{acct}"
+  end
+end
+
+get '/login' do
+  if authenticated?
+    redirect '/classify'
+  else
+    haml :login
+  end
 end
 
 get '/logout' do
@@ -93,75 +177,4 @@ get '/auth/:provider/callback' do
   session[:authenticated] = true
   session[:auth_hash] = auth_hash
   redirect "/"
-end
-
-get '/repositories' do
-  ensure_authenticated
-  content_type :json
-  repos(session[:auth_hash]).to_json
-end
-
-get '/enabled_repositories' do
-  ensure_authenticated
-  content_type :json
-  jenkins_repos.to_json
-end
-
-get '/test_config/:user/:repo' do
-  ensure_authenticated
-  content_type :json
-  test_config(session[:auth_hash], params[:user], params[:repo]).to_json
-end
-
-get '/job_config/:job' do
-  ensure_authenticated
-  content_type :json
-  job_config(params[:job]).to_json
-end
-
-get '/build_status/:job' do
-  ensure_authenticated
-  content_type :json
-  build_status(params[:job]).to_json
-end
-
-get '/jenkins_url' do
-  ensure_authenticated
-  content_type :json
-  {url: ENV["JENKINS_URL"]}.to_json
-end
-
-post '/enable_job' do
-  ensure_authenticated
-  content_type :json
-  #begin
-    enable_job(params[:data])
-    {status: :success}.to_json
-  #rescue Exception => e
-   # {status: :failure, reason: e}.to_json
-  #end
-end
-
-post '/delete_job/:job' do
-  ensure_authenticated
-  content_type :json
-  begin
-    delete_job(params[:job])
-    {status: :success}.to_json
-  rescue Exception => e
-    {status: :failure, reason: e}.to_json
-  end
-end
-
-post '/build_job/:job' do
-  ensure_authenticated
-  content_type :json
-  build_job(params[:job])
-  {status: :success}
-end
-
-post '/disable_job/:job' do
-  ensure_authenticated
-  content_type :json
-  disable_job(params[:job])
 end

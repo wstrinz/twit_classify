@@ -8,9 +8,19 @@ gem 'octokit'
 gem 'activesupport'
 gem 'i18n'
 gem 'thin'
+gem 'rack-flash3'
+gem 'twitter'
 gem 'rack-ssl-enforcer'
+gem 'redis'
 
-group :test do
-  gem "vcr"
+gem 'stuff-classifier', github: 'alexandru/stuff-classifier'
 
+gem 'pry'
+
+group :development, :test do
+  gem 'vcr'
+end
+
+group :development do
+  gem 'shotgun'
 end
