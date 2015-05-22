@@ -135,6 +135,7 @@ get '/classify/:account' do
 
   cls = TClassifier.new(params[:account])
   tweets = TwitHelper.new(params[:account]).get_tweets
+
   unless tweets.present?
     raise "No tweets :("
   end
@@ -146,6 +147,7 @@ get '/classify/:account' do
   @next_off = offset + per_page
   @per_page = per_page
   @account = params[:account]
+  @accuracy = get_accuracy_count
 
   haml :classify
 end
