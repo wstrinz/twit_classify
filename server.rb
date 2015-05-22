@@ -60,6 +60,32 @@ helpers do
     TClassifier.new(account).category_list
   end
 
+  def new_category?(account, classification)
+    !TClassifier.new(account).categories.include?(classification.to_sym)
+  end
+
+  def get_accuracy_count
+    hkey = params[:account]
+    $redis.hget(hkey, 'accuracy')
+  end
+
+  def update_accuracy_count
+    hkey = params[:account]
+    if params[:guessed_class].present? && !new_category?(hkey, params[:classification])
+      total = ($redis.hget(hkey, 'total') || 0).to_i
+      correct = ($redis.hget(hkey, 'correct') || 0).to_i
+
+      if params[:guessed_class] == params[:classification]
+        correct += 1
+      end
+
+      total += 1
+
+      accuracy = ((correct.to_f / total.to_f) * 100.0).round(2)
+      correct = $redis.hmset(hkey, 'accuracy', accuracy, 'total', total, 'correct', correct)
+    end
+  end
+
   def num_classifications_for(account)
     TClassifier.new(account).number_of_classifications
   end
@@ -124,6 +150,7 @@ get '/train/:account' do
     @current_classification = TClassifier.new(@twitter_account).classify(@tweet['text'])
     @n_classifications = num_classifications_for(@twitter_account)
     @categories = categories_for(@twitter_account) || {}
+    @accuracy = get_accuracy_count
 
     haml :train
   else
@@ -141,6 +168,7 @@ post '/train/:account' do
   acct, txt, klass, id = param_map.values
 
   if param_map.values.all?(&:present?)
+    update_accuracy_count
     cls = TClassifier.new(acct)
     cls.train(klass, txt)
     $redis.hset(acct, id, true)

@@ -7,12 +7,14 @@
     %p #{flash[:notice]}
 
   %h4 Tweets for #{@twitter_account}
-  %h5 #{@n_classifications} tweets for this account have been classified
+  %h5 #{@n_classifications} classified
+  %h5 Current Accuracy: %#{@accuracy}
 
   %p
     %form{method: 'POST'}
       %input{name: 'id', hidden: true, value: @tweet['id']}
       %input{name: 'text', hidden: true, value: @tweet['text']}
+      %input{name: 'guessed_class', hidden: true, value: @current_classification}
       %hr
       %p
         #{@tweet['text']}
