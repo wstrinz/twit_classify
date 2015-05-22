@@ -1,0 +1,13 @@
+%h2 Classify
+%h3 Tweets for #{@account}
+
+- @classified_tweets.each do |tweet, category|
+  %hr
+  %p
+    #{tweet}
+  %p
+    %strong #{category}
+
+%hr
+  %a{href: "?offset=#{@next_off}&?per_page=#{@per_page}"}
+    Next #{@per_page} tweets

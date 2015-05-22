@@ -130,7 +130,24 @@ get '/classify' do
 end
 
 get '/classify/:account' do
-  "classify page for #{params[:account]}"
+  per_page = (params[:per_page] || 20).to_i
+  offset = (params[:offset] || 0).to_i
+
+  cls = TClassifier.new(params[:account])
+  tweets = TwitHelper.new(params[:account]).get_tweets
+  unless tweets.present?
+    raise "No tweets :("
+  end
+
+  @classified_tweets = tweets[offset..(offset + per_page)].map do |t|
+    [t['text'], cls.classify(t['text'])]
+  end
+
+  @next_off = offset + per_page
+  @per_page = per_page
+  @account = params[:account]
+
+  haml :classify
 end
 
 get '/train' do
